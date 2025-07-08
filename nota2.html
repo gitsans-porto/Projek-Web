@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aplikasi Nota Pesanan v5 (Laporan Terdedikasi)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Menyembunyikan elemen */
+    .hidden {
+      display: none;
+    }
+    /* Transisi halus untuk perpindahan view */
+    #app > div {
+      transition: opacity 0.3s ease-in-out;
+    }
+    /* Styling untuk modal konfirmasi */
+    #confirmModal {
+      transition: opacity 0.2s ease;
+    }
+    /* Styling untuk tombol navigasi aktif */
+    .nav-button-active {
+        background-color: #2563eb; /* bg-blue-600 */
+        color: white;
+    }
+    /* Styling untuk dropdown autocomplete */
+    .autocomplete-suggestions {
+        border: 1px solid #ddd;
+        max-height: 150px;
+        overflow-y: auto;
+        position: fixed;
+        background-color: white;
+        z-index: 1000;
+        border-radius: 0 0 0.5rem 0.5rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        display: none;
+    }
+    .autocomplete-suggestion {
+        padding: 8px 12px;
+        cursor: pointer;
+    }
+    .autocomplete-suggestion:hover {
+        background-color: #f0f0f0;
+    }
+    /* Styling untuk tombol M/B aktif */
+    .type-button.active {
+        background-color: #3b82f6;
+        color: white;
+        font-weight: bold;
+    }
+    /* Styling untuk item riwayat yang dipilih */
+    .history-item-selected {
+        background-color: #dbeafe; /* bg-blue-100 */
+        border-color: #3b82f6; /* border-blue-500 */
+        transform: scale(1.02);
+        transition: transform 0.2s ease, background-color 0.2s ease;
+    }
+    /* Styling untuk tab laporan aktif */
+    .report-tab-active {
+        background-color: #1d4ed8; /* bg-blue-700 */
+        color: white;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans">
+  
+  <!-- Kontainer utama aplikasi -->
+  <div id="app" class="max-w-6xl mx-auto p-4">
+    <!-- Navigasi Utama -->
+    <div class="mb-4 flex flex-wrap gap-2 border-b pb-2">
+        <button id="navMain" onclick="showMainView()" class="nav-button-active flex-grow sm:flex-grow-0 bg-white hover:bg-blue-500 hover:text-white text-gray-800 font-bold px-4 py-2 rounded-lg shadow-md transition-colors duration-200">📋 Daftar Pesanan</button>
+        <button id="navHistory" onclick="showHistoryView()" class="bg-white hover:bg-blue-500 hover:text-white text-gray-800 font-bold px-4 py-2 rounded-lg shadow-md transition-colors duration-200">📜 Riwayat Pesanan</button>
+        <button id="navMenu" onclick="showMenuView()" class="bg-white hover:bg-blue-500 hover:text-white text-gray-800 font-bold px-4 py-2 rounded-lg shadow-md transition-colors duration-200">🍽️ Kelola Menu</button>
+        <button id="navReport" onclick="showReportView()" class="bg-white hover:bg-blue-500 hover:text-white text-gray-800 font-bold px-4 py-2 rounded-lg shadow-md transition-colors duration-200">📊 Laporan</button>
+    </div>
+
+    <!-- View Daftar Pesanan Aktif -->
+    <div id="mainView">
+      <div class="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
+        <h1 class="text-2xl font-bold">Daftar Pesanan Aktif</h1>
+        <button onclick="showNewOrderForm()" class="bg-green-500 hover:bg-green-600 text-white font-bold px-4 py-2 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 w-full sm:w-auto">+ Pesanan Baru</button>
+      </div>
+      
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-4 p-4 bg-white rounded-lg shadow">
+        <input type="text" id="searchInput" oninput="renderOrders()" placeholder="Cari nama atau tanggal..." class="w-full sm:w-1/2 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+        <div class="w-full sm:w-auto">
+          <label for="filterOptions" class="sr-only">Filter Pesanan</label>
+          <select id="filterOptions" onchange="renderOrders()" class="w-full p-2 border rounded-lg bg-white focus:ring-2 focus:ring-blue-500">
+            <option value="semua">🔍 Tampilkan Semua</option>
+            <option value="terbaru">🕒 Terbaru</option>
+            <option value="terlama">📜 Terlama</option>
+            <option value="belum-diterima">📦 Belum Diterima</option>
+            <option value="belum-dibayar">💰 Belum Dibayar</option>
+          </select>
+        </div>
+      </div>
+      
+      <div id="orderTable" class="bg-white rounded-lg shadow overflow-x-auto"></div>
+    </div>
+
+    <!-- Views Lainnya -->
+    <div id="historyView" class="hidden bg-white p-6 rounded-lg shadow-lg"></div>
+    <div id="menuView" class="hidden bg-white p-6 rounded-lg shadow-lg"></div>
+    <div id="laporanContainer" class="hidden bg-white p-6 rounded-lg shadow-lg"></div>
+    <div id="orderFormContainer" class="hidden bg-white p-6 rounded-lg shadow-lg"></div>
+    <div id="orderDetailContainer" class="hidden bg-white p-6 rounded-lg shadow-lg"></div>
+  </div>
+
+  <!-- Modal untuk konfirmasi -->
+  <div id="confirmModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center p-4 z-50">
+    <div class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center">
+        <h3 class="text-lg font-bold mb-4" id="confirmTitle">Konfirmasi</h3>
+        <p class="mb-6" id="confirmMessage">Apakah Anda yakin?</p>
+        <div class="flex justify-center gap-4">
+            <button id="confirmNo" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-6 rounded-lg">Tidak</button>
+            <button id="confirmYes" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg">Ya</button>
+        </div>
+    </div>
+  </div>
+
+  <script>
+    // === Inisialisasi State Aplikasi ===
+    let orders = JSON.parse(localStorage.getItem('orders')) || [];
+    let menuItems = JSON.parse(localStorage.getItem('menuItems')) || [
+        { id: 1, name: 'Nasi Goreng Spesial', price: 25000 },
+        { id: 2, name: 'Mie Ayam Bakso', price: 18000 },
+        { id: 3, name: 'Ayam Geprek', price: 20000 },
+        { id: 4, name: 'Es Teh Manis', price: 5000 },
+    ];
+    let currentView = 'main';
+    let currentAutocompleteInput = null;
+    
+    // State untuk mode seleksi hapus di riwayat
+    let selectionMode = false;
+    let selectedHistoryIds = new Set();
+    let longPressTimer;
+
+    // State untuk Laporan
+    let reportState = {
+        type: 'daily',
+        date: new Date().toISOString().slice(0, 10),
+        month: new Date().toISOString().slice(0, 7),
+        year: new Date().getFullYear()
+    };
+
+    // === Fungsi Manajemen Data ===
+    function saveOrders() {
+      localStorage.setItem('orders', JSON.stringify(orders));
+    }
+    function saveMenuItems() {
+        localStorage.setItem('menuItems', JSON.stringify(menuItems));
+    }
+    function migrateOrders() {
+      let needsSave = false;
+      orders.forEach(order => {
+        if (!order.id) {
+          order.id = 'order_' + new Date(order.date).getTime() + Math.random().toString(36).substr(2, 9);
+          needsSave = true;
+        }
+        if (typeof order.finished === 'undefined') {
+            order.finished = (order.paid && order.received);
+            needsSave = true;
+        }
+        order.items.forEach(item => {
+            if (typeof item.type === 'undefined') {
+                item.type = 'M';
+                needsSave = true;
+            }
+        });
+      });
+      if (needsSave) {
+        saveOrders();
+      }
+    }
+
+    // === Fungsi Navigasi & Tampilan ===
+    function hideAllViews() {
+        ['mainView', 'historyView', 'menuView', 'laporanContainer', 'orderFormContainer', 'orderDetailContainer'].forEach(id => {
+            document.getElementById(id).classList.add('hidden');
+        });
+        ['navMain', 'navHistory', 'navMenu', 'navReport'].forEach(id => {
+             document.getElementById(id)?.classList.remove('nav-button-active');
+        });
+        if (selectionMode) {
+            toggleSelectionMode(false);
+        }
+    }
+    function showMainView() {
+        currentView = 'main';
+        hideAllViews();
+        document.getElementById('mainView').classList.remove('hidden');
+        document.getElementById('navMain').classList.add('nav-button-active');
+        renderOrders();
+    }
+    function showHistoryView() {
+        currentView = 'history';
+        hideAllViews();
+        document.getElementById('historyView').classList.remove('hidden');
+        document.getElementById('navHistory').classList.add('nav-button-active');
+        renderHistory();
+    }
+    function showMenuView() {
+        currentView = 'menu';
+        hideAllViews();
+        document.getElementById('menuView').classList.remove('hidden');
+        document.getElementById('navMenu').classList.add('nav-button-active');
+        renderMenu();
+    }
+    function showReportView() {
+        currentView = 'report';
+        hideAllViews();
+        document.getElementById('laporanContainer').classList.remove('hidden');
+        document.getElementById('navReport').classList.add('nav-button-active');
+        renderReport();
+    }
+    function returnToListView() {
+        // Fungsi ini hanya untuk kembali dari form/detail, bukan dari view utama
+        if (document.getElementById('navHistory').classList.contains('nav-button-active')) {
+            showHistoryView();
+        } else {
+            showMainView();
+        }
+    }
+    function formatFullDate(dateString) {
+        const options = { day: 'numeric', month: 'long', year: 'numeric' };
+        return new Date(dateString).toLocaleDateString('id-ID', options);
+    }
+    
+    // === Fungsi Rendering Tampilan ===
+    function renderOrders() {
+      const keyword = document.getElementById('searchInput').value.toLowerCase();
+      const filter = document.getElementById('filterOptions').value;
+      const container = document.getElementById('orderTable');
+      let processedOrders = orders.filter(o => !o.finished);
+      switch (filter) {
+        case 'terbaru': processedOrders.sort((a, b) => new Date(b.date) - new Date(a.date)); break;
+        case 'terlama': processedOrders.sort((a, b) => new Date(a.date) - new Date(b.date)); break;
+        case 'belum-diterima': processedOrders = processedOrders.filter(o => !o.received); break;
+        case 'belum-dibayar': processedOrders = processedOrders.filter(o => !o.paid); break;
+        default: processedOrders.sort((a, b) => new Date(b.date) - new Date(a.date)); break;
+      }
+      if (keyword) {
+        processedOrders = processedOrders.filter(o => o.name.toLowerCase().includes(keyword) || o.date.includes(keyword));
+      }
+      
+      let html = `<table class='w-full text-sm border-collapse'><thead><tr class='bg-gray-200'>
+        <th class='p-3 border text-left'>Catatan</th><th class='p-3 border text-left'>Nama</th><th class='p-3 border text-left'>Daftar Pesanan</th><th class='p-3 border text-left'>Total</th>
+        <th class='p-3 border text-center'>Diterima?</th><th class='p-3 border text-center'>Dibayar?</th><th class='p-3 border text-center'>Status</th><th class='p-3 border text-center'>Aksi</th>
+      </tr></thead><tbody>`;
+      if (processedOrders.length === 0) {
+        html += `<tr><td colspan="8" class="p-4 text-center text-gray-500">Tidak ada pesanan aktif.</td></tr>`;
+      } else {
+        processedOrders.forEach(o => {
+          const itemsList = o.items.map(item => `&bull; ${item.qty}x ${item.name}${item.type ? ` (${item.type})` : ''}`).join('<br>');
+          html += `<tr class='bg-white hover:bg-gray-50'>
+            <td class='p-3 border align-top text-xs'>${o.notes || '-'}</td><td class='p-3 border align-top font-medium'>${o.name}</td>
+            <td class='p-3 border align-top text-xs'>${itemsList}</td><td class='p-3 border align-top'>Rp ${o.total.toLocaleString('id-ID')}</td>
+            <td class='p-3 border text-center align-top'><button onclick="toggleStatus('${o.id}', 'received')" class="px-3 py-1 rounded-full text-xs font-semibold ${o.received ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${o.received ? 'Ya' : 'Tidak'}</button></td>
+            <td class='p-3 border text-center align-top'><button onclick="toggleStatus('${o.id}', 'paid')" class="px-3 py-1 rounded-full text-xs font-semibold ${o.paid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${o.paid ? 'Ya' : 'Tidak'}</button></td>
+            <td class='p-3 border text-center align-top'><button onclick="confirmFinishOrder('${o.id}')" class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-lg">Selesaikan</button></td>
+            <td class='p-3 border text-center align-top whitespace-nowrap'>
+                <button onclick="viewDetail('${o.id}')" class="text-blue-600 hover:underline">Lihat</button>
+                <button onclick="editOrder('${o.id}')" class="text-yellow-600 hover:underline ml-2">Edit</button>
+                <button onclick="confirmDelete('${o.id}')" class="text-red-600 hover:underline ml-2">Hapus</button>
+            </td></tr>`;
+        });
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    function renderHistory() {
+        const container = document.getElementById('historyView');
+        const finishedOrders = orders.filter(o => o.finished).sort((a,b) => new Date(b.date) - new Date(a.date));
+
+        let selectionHeader = `
+            <div id="selection-controls" class="${selectionMode ? '' : 'hidden'} bg-blue-50 p-3 rounded-lg mb-4 flex justify-between items-center transition-all">
+                <div class="flex gap-4 items-center">
+                    <button onclick="toggleSelectionMode(false)" class="text-blue-600 hover:text-blue-800 font-bold">Batal</button>
+                    <span id="selection-count" class="font-bold text-blue-800">${selectedHistoryIds.size} dipilih</span>
+                </div>
+                <div class="flex gap-2">
+                     <button onclick="selectAllHistory()" class="bg-blue-200 hover:bg-blue-300 text-blue-800 font-bold py-1 px-3 rounded-lg">Pilih Semua</button>
+                     <button onclick="confirmDeleteSelectedHistory()" class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded-lg">Hapus</button>
+                </div>
+            </div>`;
+            
+        let header = `
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">Riwayat Pesanan</h2>
+                <button id="delete-all-btn" onclick="confirmDeleteAllHistory()" class="${finishedOrders.length > 0 ? '' : 'hidden'} bg-red-100 text-red-800 hover:bg-red-200 px-3 py-1 text-sm rounded-md font-semibold">Hapus Semua Riwayat</button>
+            </div>`;
+
+        if (finishedOrders.length === 0) {
+            container.innerHTML = header + `<p class="text-gray-500">Belum ada pesanan yang selesai.</p>`;
+            return;
+        }
+        
+        const groupedByDate = finishedOrders.reduce((acc, order) => {
+            const date = formatFullDate(order.date);
+            if (!acc[date]) acc[date] = [];
+            acc[date].push(order);
+            return acc;
+        }, {});
+
+        let html = selectionHeader + header;
+        for (const date in groupedByDate) {
+            html += `<div class="mb-6"><h3 class="text-lg font-semibold text-gray-700 bg-gray-100 p-2 rounded-md">${date}</h3><div id="history-list" class="mt-2 space-y-3">`;
+            groupedByDate[date].forEach(o => {
+                const isSelected = selectedHistoryIds.has(o.id);
+                const itemsList = o.items.map(item => `${item.qty}x ${item.name}${item.type ? ` (${item.type})` : ''}`).join(', ');
+                html += `
+                    <div id="history-${o.id}" 
+                         class="history-item p-4 border rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4 cursor-pointer transition-all duration-200 ${isSelected ? 'history-item-selected' : 'bg-white'}"
+                         onmousedown="handleHistoryPress('${o.id}')" onmouseup="handleHistoryRelease()"
+                         ontouchstart="handleHistoryPress('${o.id}')" ontouchend="handleHistoryRelease()"
+                         onclick="handleHistoryClick('${o.id}')">
+                        <div>
+                            <p class="font-bold text-gray-800">${o.name}</p>
+                            <p class="text-sm text-gray-600">${itemsList}</p>
+                            <p class="text-sm font-semibold mt-1">Total: Rp ${o.total.toLocaleString('id-ID')}</p>
+                        </div>
+                        <div class="flex-shrink-0 flex gap-2 action-buttons ${selectionMode ? 'hidden' : ''}">
+                            <button onclick="event.stopPropagation(); viewDetail('${o.id}')" class="bg-blue-100 text-blue-800 hover:bg-blue-200 px-3 py-1 text-sm rounded-md">Lihat</button>
+                            <button onclick="event.stopPropagation(); editOrder('${o.id}')" class="bg-yellow-100 text-yellow-800 hover:bg-yellow-200 px-3 py-1 text-sm rounded-md">Edit</button>
+                        </div>
+                    </div>`;
+            });
+            html += '</div></div>';
+        }
+        container.innerHTML = html;
+    }
+
+    // === Fungsi Aksi Pesanan ===
+    function toggleStatus(id, type) {
+      const index = orders.findIndex(o => o.id === id);
+      if (index > -1) {
+        if (type === 'received') orders[index].received = !orders[index].received;
+        if (type === 'paid') orders[index].paid = !orders[index].paid;
+        saveOrders();
+        renderOrders();
+      }
+    }
+    function markOrderAsFinished(id) {
+        const index = orders.findIndex(o => o.id === id);
+        if (index > -1) {
+            orders[index].finished = true;
+            saveOrders();
+            renderOrders();
+        }
+    }
+    function saveOrder(id = null) {
+      const dateInput = document.getElementById('date').value;
+      const nameInput = document.getElementById('name').value.trim();
+      if (!dateInput || !nameInput) { alert('Tanggal dan Nama pelanggan harus diisi!'); return; }
+      const items = [];
+      document.querySelectorAll('#itemTable tbody tr').forEach(row => {
+        const qty = parseInt(row.querySelector('input[type="number"]').value) || 0;
+        const name = row.querySelector('input[type="text"]').value.trim();
+        const price = parseFloat(row.querySelector('input.price-input').value) || 0;
+        const type = row.dataset.type || 'M';
+        if (name && qty > 0) items.push({ qty, name, price, type });
+      });
+      if (items.length === 0) { alert('Minimal harus ada satu barang yang valid!'); return; }
+      const total = items.reduce((sum, item) => sum + (item.qty * item.price), 0);
+      const orderData = {
+        date: dateInput, name: nameInput, notes: document.getElementById('notes').value.trim(),
+        received: document.getElementById('received').checked, paid: document.getElementById('paid').checked,
+        items: items, total: total
+      };
+      if (id && id !== 'null') {
+        const index = orders.findIndex(o => o.id === id);
+        if (index > -1) orders[index] = { ...orders[index], ...orderData };
+      } else {
+        orderData.id = 'order_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        orderData.finished = false;
+        orders.push(orderData);
+      }
+      saveOrders();
+      returnToListView();
+    }
+    function deleteOrder(id) {
+      orders = orders.filter(o => o.id !== id);
+      saveOrders();
+      returnToListView();
+    }
+
+    // === Tampilan Form, Detail, dan Laporan ===
+    function showNewOrderForm(id = null) {
+      hideAllViews();
+      const container = document.getElementById('orderFormContainer');
+      container.classList.remove('hidden');
+      const isEditing = id !== null;
+      const order = isEditing ? orders.find(o => o.id === id) : { date: new Date().toISOString().slice(0,10), name: '', notes: '', received: false, paid: false, items: [] };
+      container.innerHTML = `
+        <h2 class="text-xl font-bold mb-4">${isEditing ? '📝 Edit Pesanan' : '📝 Pesanan Baru'}</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <input type="date" id="date" value="${order.date}" class="p-2 border rounded-lg">
+          <input type="text" id="name" placeholder="Nama Pelanggan" value="${order.name}" class="p-2 border rounded-lg">
+        </div>
+        <textarea id="notes" placeholder="Catatan pesanan..." class="w-full p-2 border rounded-lg mb-4">${order.notes}</textarea>
+        <div class="flex gap-4 mb-4">
+          <label class="flex items-center"><input type="checkbox" id="received" class="mr-2" ${order.received ? 'checked' : ''}> Sudah Diterima</label>
+          <label class="flex items-center"><input type="checkbox" id="paid" class="mr-2" ${order.paid ? 'checked' : ''}> Sudah Dibayar</label>
+        </div>
+        <h3 class="font-bold mb-2">Daftar Barang</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm border mb-2" id="itemTable">
+              <thead class="bg-gray-200"><tr>
+                <th class="p-2 border">Banyak</th><th class="p-2 border">Nama Barang</th><th class="p-2 border">Harga Satuan</th><th class="p-2 border">M/B</th><th class="p-2 border">Subtotal</th><th></th>
+              </tr></thead><tbody></tbody>
+            </table>
+        </div>
+        <button onclick="addItemRow()" class="bg-blue-500 text-white px-3 py-1 rounded-lg text-sm mb-4">+ Tambah Barang</button>
+        <div class="text-right text-xl font-bold">Total: Rp <span id="grandTotal">0</span></div>
+        <div class="mt-6 flex justify-end gap-4">
+          <button onclick="returnToListView()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg">Batal</button>
+          <button onclick="saveOrder('${id}')" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">${isEditing ? 'Simpan Perubahan' : 'Simpan Pesanan'}</button>
+        </div>
+      `;
+      if (order.items.length > 0) order.items.forEach(item => addItemRow(item));
+      else addItemRow();
+      updateTotal();
+    }
+    
+    function addItemRow(item = { qty: 1, name: '', price: 0, type: 'M' }) {
+        const tbody = document.querySelector('#itemTable tbody');
+        const row = document.createElement('tr');
+        row.dataset.type = item.type;
+        row.innerHTML = `
+            <td class="p-1 border"><input type="number" min="1" value="${item.qty}" class="w-full p-1 border rounded" oninput="updateTotal()"></td>
+            <td class="p-1 border">
+                <input type="text" value="${item.name}" class="w-full p-1 border rounded item-name-input" placeholder="Ketik nama menu..." oninput="handleItemInput(event)" onfocus="handleItemInput(event)">
+            </td>
+            <td class="p-1 border"><input type="number" min="0" value="${item.price}" class="w-full p-1 border rounded price-input" oninput="updateTotal()"></td>
+            <td class="p-1 border text-center">
+                <div class="flex justify-center gap-1">
+                    <button onclick="setType(this, 'M')" class="type-button border rounded px-2 py-1 text-xs ${item.type === 'M' ? 'active' : ''}">M</button>
+                    <button onclick="setType(this, 'B')" class="type-button border rounded px-2 py-1 text-xs ${item.type === 'B' ? 'active' : ''}">B</button>
+                </div>
+            </td>
+            <td class="p-1 border text-right total">0</td>
+            <td class="p-1 border text-center"><button onclick="this.closest('tr').remove(); updateTotal();" class="text-red-500 hover:text-red-700">✖</button></td>
+        `;
+        tbody.appendChild(row);
+    }
+
+    function setType(button, type) {
+        const row = button.closest('tr');
+        row.dataset.type = type;
+        row.querySelectorAll('.type-button').forEach(btn => btn.classList.remove('active'));
+        button.classList.add('active');
+    }
+
+    function handleItemInput(event) {
+        const input = event.target;
+        currentAutocompleteInput = input; 
+
+        let suggestionsContainer = document.getElementById('global-autocomplete');
+        if (!suggestionsContainer) {
+            suggestionsContainer = document.createElement('div');
+            suggestionsContainer.id = 'global-autocomplete';
+            suggestionsContainer.className = 'autocomplete-suggestions';
+            document.body.appendChild(suggestionsContainer);
+        }
+
+        const value = input.value.toLowerCase();
+        suggestionsContainer.innerHTML = '';
+        if (!value) {
+            suggestionsContainer.style.display = 'none';
+            return;
+        }
+
+        const filteredItems = menuItems.filter(item => item.name.toLowerCase().includes(value));
+        
+        if (filteredItems.length > 0) {
+            filteredItems.forEach(item => {
+                const div = document.createElement('div');
+                div.textContent = item.name;
+                div.className = 'autocomplete-suggestion';
+                div.onclick = () => selectMenuItem(item.name, item.price);
+                suggestionsContainer.appendChild(div);
+            });
+
+            const inputRect = input.getBoundingClientRect();
+            suggestionsContainer.style.left = `${inputRect.left}px`;
+            suggestionsContainer.style.top = `${inputRect.bottom}px`;
+            suggestionsContainer.style.width = `${inputRect.width}px`;
+            suggestionsContainer.style.display = 'block';
+        } else {
+            suggestionsContainer.style.display = 'none';
+        }
+    }
+
+    function selectMenuItem(name, price) {
+        if (!currentAutocompleteInput) return;
+        const row = currentAutocompleteInput.closest('tr');
+        row.querySelector('.item-name-input').value = name;
+        row.querySelector('.price-input').value = price;
+        const suggestionsContainer = document.getElementById('global-autocomplete');
+        if (suggestionsContainer) {
+            suggestionsContainer.style.display = 'none';
+        }
+        updateTotal();
+        currentAutocompleteInput.focus();
+        currentAutocompleteInput = null;
+    }
+
+    document.addEventListener('click', function (e) {
+        const suggestionsContainer = document.getElementById('global-autocomplete');
+        if (suggestionsContainer && suggestionsContainer.style.display === 'block') {
+            if (!suggestionsContainer.contains(e.target) && !e.target.classList.contains('item-name-input')) {
+                suggestionsContainer.style.display = 'none';
+                currentAutocompleteInput = null;
+            }
+        }
+    });
+
+    function updateTotal() {
+        const rows = document.querySelectorAll('#itemTable tbody tr');
+        let grandTotal = 0;
+        rows.forEach(row => {
+            const qty = +row.children[0].querySelector('input').value || 0;
+            const price = +row.children[2].querySelector('input').value || 0;
+            const subtotal = qty * price;
+            row.querySelector('.total').innerText = subtotal.toLocaleString('id-ID');
+            grandTotal += subtotal;
+        });
+        document.getElementById('grandTotal').innerText = grandTotal.toLocaleString('id-ID');
+    }
+    function editOrder(id) { showNewOrderForm(id); }
+    
+    // === Fungsi Hapus Riwayat ===
+    function handleHistoryPress(id) {
+        longPressTimer = setTimeout(() => {
+            if (!selectionMode) toggleSelectionMode(true);
+            toggleHistorySelection(id);
+        }, 500);
+    }
+    function handleHistoryRelease() { clearTimeout(longPressTimer); }
+    function handleHistoryClick(id) { if (selectionMode) toggleHistorySelection(id); }
+    function toggleSelectionMode(enable) {
+        selectionMode = enable;
+        if (!enable) selectedHistoryIds.clear();
+        renderHistory();
+    }
+    function toggleHistorySelection(id) {
+        const itemElement = document.getElementById(`history-${id}`);
+        if (!itemElement) return;
+        if (selectedHistoryIds.has(id)) {
+            selectedHistoryIds.delete(id);
+            itemElement.classList.remove('history-item-selected');
+        } else {
+            selectedHistoryIds.add(id);
+            itemElement.classList.add('history-item-selected');
+        }
+        document.getElementById('selection-count').innerText = `${selectedHistoryIds.size} dipilih`;
+        if (selectedHistoryIds.size === 0 && selectionMode) toggleSelectionMode(false);
+    }
+    function selectAllHistory() {
+        const allVisibleIds = orders.filter(o => o.finished).map(o => o.id);
+        if (selectedHistoryIds.size === allVisibleIds.length) {
+            selectedHistoryIds.clear();
+        } else {
+            allVisibleIds.forEach(id => selectedHistoryIds.add(id));
+        }
+        renderHistory();
+        document.getElementById('selection-count').innerText = `${selectedHistoryIds.size} dipilih`;
+    }
+    function confirmDeleteSelectedHistory() {
+        if (selectedHistoryIds.size === 0) return;
+        const count = selectedHistoryIds.size;
+        showConfirmModal('Hapus Riwayat Terpilih', `Anda yakin ingin menghapus ${count} riwayat pesanan ini?`,
+            () => {
+                orders = orders.filter(o => !selectedHistoryIds.has(o.id));
+                saveOrders();
+                toggleSelectionMode(false);
+            }, `Ya, Hapus (${count})`);
+    }
+    function confirmDeleteAllHistory() {
+        const finishedCount = orders.filter(o => o.finished).length;
+        if (finishedCount === 0) return;
+        showConfirmModal('Hapus Semua Riwayat', `Anda yakin ingin menghapus SEMUA (${finishedCount}) riwayat pesanan?`,
+            () => {
+                orders = orders.filter(o => !o.finished);
+                saveOrders();
+                renderHistory();
+            }, 'Ya, Hapus Semua');
+    }
+
+    // === Fungsi Laporan Baru ===
+    function changeReportType(type) {
+        reportState.type = type;
+        renderReport();
+    }
+
+    function handleReportDateChange(event) {
+        const { id, value } = event.target;
+        if (id === 'report-date-picker') reportState.date = value;
+        if (id === 'report-month-picker') reportState.month = value;
+        if (id === 'report-year-picker') reportState.year = value;
+        renderReport();
+    }
+
+    function renderReport() {
+        const container = document.getElementById('laporanContainer');
+        const type = reportState.type;
+
+        // Hanya sertakan pesanan yang sudah lunas dan selesai dalam laporan pendapatan
+        const paidOrders = orders.filter(o => o.paid && o.finished);
+
+        let filteredOrders = [];
+        let title = '';
+
+        if (type === 'daily') {
+            const date = reportState.date;
+            filteredOrders = paidOrders.filter(o => o.date === date);
+            title = `Laporan Harian - ${formatFullDate(date)}`;
+        } else if (type === 'monthly') {
+            const month = reportState.month; // Format: YYYY-MM
+            filteredOrders = paidOrders.filter(o => o.date.startsWith(month));
+            const monthDate = new Date(month + '-02'); // Hindari bug timezone
+            const monthName = monthDate.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+            title = `Laporan Bulanan - ${monthName}`;
+        } else if (type === 'yearly') {
+            const year = reportState.year.toString();
+            filteredOrders = paidOrders.filter(o => o.date.startsWith(year));
+            title = `Laporan Tahunan - ${year}`;
+        }
+
+        const totalPendapatan = filteredOrders.reduce((sum, order) => sum + order.total, 0);
+
+        let html = `
+            <h2 class="text-2xl font-bold mb-4">📊 Laporan Pendapatan</h2>
+            
+            <div class="mb-4 p-2 bg-gray-100 rounded-lg flex flex-wrap gap-2">
+                <button onclick="changeReportType('daily')" class="flex-grow report-tab px-4 py-2 rounded-md font-semibold transition ${type === 'daily' ? 'report-tab-active' : 'bg-white hover:bg-gray-200'}">Harian</button>
+                <button onclick="changeReportType('monthly')" class="flex-grow report-tab px-4 py-2 rounded-md font-semibold transition ${type === 'monthly' ? 'report-tab-active' : 'bg-white hover:bg-gray-200'}">Bulanan</button>
+                <button onclick="changeReportType('yearly')" class="flex-grow report-tab px-4 py-2 rounded-md font-semibold transition ${type === 'yearly' ? 'report-tab-active' : 'bg-white hover:bg-gray-200'}">Tahunan</button>
+            </div>
+
+            <div class="mb-4 p-4 bg-white rounded-lg shadow-inner">
+                <label for="report-picker" class="font-semibold text-gray-700">Pilih Periode:</label>
+                <input type="date" id="report-date-picker" value="${reportState.date}" onchange="handleReportDateChange(event)" class="p-2 border rounded-lg w-full mt-1 ${type !== 'daily' ? 'hidden' : ''}">
+                <input type="month" id="report-month-picker" value="${reportState.month}" onchange="handleReportDateChange(event)" class="p-2 border rounded-lg w-full mt-1 ${type !== 'monthly' ? 'hidden' : ''}">
+                <input type="number" id="report-year-picker" value="${reportState.year}" onchange="handleReportDateChange(event)" class="p-2 border rounded-lg w-full mt-1 ${type !== 'yearly' ? 'hidden' : ''}" placeholder="Tahun">
+            </div>
+
+            <div id="report-results" class="bg-white p-4 rounded-lg shadow">
+                <h3 class="text-xl font-bold mb-2">${title}</h3>
+                <div class="bg-blue-100 border-l-4 border-blue-500 text-blue-800 p-4 mb-4 rounded-r-lg">
+                    <p class="font-bold">Total Pendapatan di Periode Ini</p>
+                    <p class="text-3xl font-mono">Rp ${totalPendapatan.toLocaleString('id-ID')}</p>
+                </div>
+
+                <h4 class="font-semibold mb-2">Rincian Transaksi:</h4>
+                <div class="overflow-x-auto">
+        `;
+
+        if (filteredOrders.length > 0) {
+            html += `<table class="w-full text-sm border-collapse">
+                <thead class="bg-gray-200">
+                    <tr>
+                        <th class="p-2 border text-left">Tanggal</th>
+                        <th class="p-2 border text-left">Nama Pelanggan</th>
+                        <th class="p-2 border text-right">Total</th>
+                        <th class="p-2 border text-center">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+            filteredOrders.forEach(order => {
+                html += `<tr class="hover:bg-gray-50">
+                    <td class="p-2 border">${formatFullDate(order.date)}</td>
+                    <td class="p-2 border">${order.name}</td>
+                    <td class="p-2 border text-right font-mono">Rp ${order.total.toLocaleString('id-ID')}</td>
+                    <td class="p-2 border text-center"><button onclick="viewDetail('${order.id}')" class="text-blue-600 hover:underline">Lihat</button></td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+        } else {
+            html += `<p class="text-gray-500 p-4 text-center bg-gray-50 rounded-lg">Tidak ada transaksi yang lunas pada periode ini.</p>`;
+        }
+
+        html += `</div></div>`;
+        container.innerHTML = html;
+    }
+
+    // === Fungsi Utilitas & Modal ===
+    function showConfirmModal(title, message, onConfirm, buttonText = "Ya") {
+        const modal = document.getElementById('confirmModal');
+        document.getElementById('confirmTitle').innerText = title;
+        document.getElementById('confirmMessage').innerText = message;
+        const confirmYesButton = document.getElementById('confirmYes');
+        const confirmNoButton = document.getElementById('confirmNo');
+        confirmYesButton.innerText = buttonText;
+        const newYesButton = confirmYesButton.cloneNode(true);
+        confirmYesButton.parentNode.replaceChild(newYesButton, confirmYesButton);
+        newYesButton.onclick = () => {
+            onConfirm();
+            modal.classList.add('hidden');
+        };
+        confirmNoButton.onclick = () => modal.classList.add('hidden');
+        modal.classList.remove('hidden');
+    }
+    function confirmDelete(id) {
+        showConfirmModal('Konfirmasi Penghapusan', 'Apakah Anda yakin ingin menghapus pesanan ini secara permanen?', () => deleteOrder(id), "Ya, Hapus");
+    }
+    function confirmFinishOrder(id) {
+        showConfirmModal('Konfirmasi Selesai', 'Pindahkan pesanan ini ke Riwayat?', () => markOrderAsFinished(id), "Ya, Selesaikan");
+    }
+
+    // === Inisialisasi Aplikasi ===
+    window.onload = function () {
+      migrateOrders();
+      saveMenuItems();
+      showMainView();
+    }
+
+    // --- Salin fungsi-fungsi yang tidak berubah dari skrip sebelumnya ke sini ---
+    viewDetail = function(id) {
+      const order = orders.find(o => o.id === id);
+      if (!order) return;
+      hideAllViews();
+      const container = document.getElementById('orderDetailContainer');
+      container.classList.remove('hidden');
+      const statusPesanan = order.finished ? '✅ Selesai (Diarsipkan)' : '⏳ Aktif';
+      container.innerHTML = `<div id="nota" class="bg-white p-6 border rounded-lg">
+          <h2 class="text-2xl font-bold mb-4">🧾 Detail Pesanan</h2>
+          <div class="grid grid-cols-2 gap-x-4 gap-y-2 mb-4">
+              <p><strong>Tanggal:</strong></p><p>${formatFullDate(order.date)}</p><p><strong>Nama:</strong></p><p>${order.name}</p>
+              <p><strong>Status:</strong></p><p>${statusPesanan}</p><p><strong>Diterima:</strong></p><p>${order.received ? '✅ Ya' : '❌ Tidak'}</p>
+              <p><strong>Dibayar:</strong></p><p>${order.paid ? '✅ Ya' : '❌ Tidak'}</p><p class="col-span-2"><strong>Catatan:</strong><br>${order.notes || '-'}</p>
+          </div>
+          <table class="w-full text-sm border my-4">
+            <thead><tr class="bg-gray-200"><th class="p-2 border">Banyak</th><th class="p-2 border">Nama Barang</th><th class="p-2 border">Harga</th><th class="p-2 border">Total</th></tr></thead>
+            <tbody>${order.items.map(i => `<tr><td class='p-2 border text-center'>${i.qty}</td><td class='p-2 border'>${i.name}${i.type ? ` (${i.type})` : ''}</td><td class='p-2 border text-right'>${i.price.toLocaleString('id-ID')}</td><td class='p-2 border text-right'>${(i.qty * i.price).toLocaleString('id-ID')}</td></tr>`).join('')}</tbody>
+            <tfoot><tr class="font-bold"><td colspan="3" class="p-2 border text-right">Total Keseluruhan</td><td class="p-2 border text-right">Rp ${order.total.toLocaleString('id-ID')}</td></tr></tfoot>
+          </table></div>
+        <div class="mt-6 flex flex-wrap justify-end gap-2">
+            <button onclick="editOrder('${id}')" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg">Edit</button>
+            <button onclick="confirmDelete('${id}')" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg">Hapus</button>
+            <button onclick="printNota()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">🖨 Cetak</button>
+            <button onclick="returnToListView()" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg">⬅ Kembali</button>
+        </div>`;
+    }
+    printNota = function() {
+        const notaElement = document.getElementById('nota');
+        const orderName = orders.find(o => notaElement.innerHTML.includes(o.name))?.name || "Pelanggan";
+        const orderDate = new Date().toISOString().slice(0, 10);
+        const filename = `Nota-${orderName.replace(/\s/g, '_')}-${orderDate}.pdf`;
+        html2pdf().from(notaElement).set({ margin: 0.5, filename: filename, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' } }).save();
+    }
+    renderMenu = function() {
+        const container = document.getElementById('menuView');
+        container.innerHTML = `<div class="flex justify-between items-center mb-4"><h2 class="text-2xl font-bold">Kelola Menu</h2></div>
+            <div class="bg-gray-50 p-4 rounded-lg mb-6 shadow-inner"><h3 class="font-bold mb-2" id="menuFormTitle">Tambah Menu Baru</h3>
+                <form id="menuForm" onsubmit="handleMenuFormSubmit(event)"><input type="hidden" id="menuId" value="">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <input type="text" id="menuName" placeholder="Nama Menu" class="p-2 border rounded-lg md:col-span-2" required>
+                        <input type="number" id="menuPrice" placeholder="Harga" class="p-2 border rounded-lg" required>
+                        <div class="md:col-span-3 flex justify-end gap-2">
+                            <button type="button" onclick="resetMenuForm()" class="bg-gray-500 text-white px-4 py-2 rounded-lg">Batal</button>
+                            <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded-lg" id="menuFormButton">Simpan Menu</button>
+                        </div></div></form></div>
+            <h3 class="font-bold mb-2">Daftar Menu Tersimpan</h3><div id="menuListContainer" class="overflow-x-auto"></div>`;
+        renderMenuList();
+    }
+    renderMenuList = function() {
+        const listContainer = document.getElementById('menuListContainer');
+        if (!listContainer) return;
+        let html = `<table class="w-full text-sm border-collapse"><thead class="bg-gray-200"><tr><th class="p-3 border text-left">Nama Menu</th><th class="p-3 border text-left">Harga</th><th class="p-3 border text-center">Aksi</th></tr></thead><tbody>`;
+        if (menuItems.length === 0) html += `<tr><td colspan="3" class="p-4 text-center text-gray-500">Belum ada menu yang ditambahkan.</td></tr>`;
+        else menuItems.forEach(item => { html += `<tr class="hover:bg-gray-50"><td class="p-3 border font-medium">${item.name}</td><td class="p-3 border">Rp ${item.price.toLocaleString('id-ID')}</td><td class="p-3 border text-center whitespace-nowrap"><button onclick="editMenuItem('${item.id}')" class="text-yellow-600 hover:underline">Edit</button><button onclick="confirmDeleteMenuItem('${item.id}')" class="text-red-600 hover:underline ml-2">Hapus</button></td></tr>`; });
+        html += `</tbody></table>`;
+        listContainer.innerHTML = html;
+    }
+    handleMenuFormSubmit = function(event) {
+        event.preventDefault();
+        const id = document.getElementById('menuId').value;
+        const name = document.getElementById('menuName').value.trim();
+        const price = parseFloat(document.getElementById('menuPrice').value);
+        if (!name || isNaN(price)) { alert('Nama dan harga menu harus diisi dengan benar.'); return; }
+        if (id) {
+            const index = menuItems.findIndex(item => item.id == id);
+            if (index > -1) menuItems[index] = { ...menuItems[index], name, price };
+        } else {
+            menuItems.push({ id: Date.now(), name, price });
+        }
+        saveMenuItems(); resetMenuForm(); renderMenuList();
+    }
+    resetMenuForm = function() {
+        document.getElementById('menuForm').reset();
+        document.getElementById('menuId').value = '';
+        document.getElementById('menuFormTitle').textContent = 'Tambah Menu Baru';
+        document.getElementById('menuFormButton').textContent = 'Simpan Menu';
+        document.getElementById('menuFormButton').classList.replace('bg-yellow-600', 'bg-green-600');
+    }
+    editMenuItem = function(id) {
+        const item = menuItems.find(item => item.id == id);
+        if (item) {
+            document.getElementById('menuId').value = item.id;
+            document.getElementById('menuName').value = item.name;
+            document.getElementById('menuPrice').value = item.price;
+            document.getElementById('menuFormTitle').textContent = 'Edit Menu';
+            document.getElementById('menuFormButton').textContent = 'Simpan Perubahan';
+            document.getElementById('menuFormButton').classList.replace('bg-green-600', 'bg-yellow-600');
+            window.scrollTo(0, 0);
+        }
+    }
+    confirmDeleteMenuItem = function(id) {
+        showConfirmModal('Konfirmasi Hapus Menu', 'Anda yakin ingin menghapus menu ini?', () => {
+            menuItems = menuItems.filter(item => item.id != id);
+            saveMenuItems(); renderMenuList();
+        }, "Ya, Hapus");
+    }
+  </script>
+</body>
+</html>
